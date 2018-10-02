@@ -104,18 +104,26 @@ float hsum_float_sse3(__m128 v) {
     //on second thought, this is probably unnecessary since it's just a factor and will get
     //normalized out anyways.
 
-    double Ak2_sum = 0; // sum of Ak^2 over all k
+    std::vector<double> Ak2_sums (Nm, 0.); // prefix sum of Ak^2 over all k
+    normalizationFactors = std::vector<double>(Nm, 0.);
     //for this loop, the Ak array actually contains Gk*delta_k (ie non-normalized Ak^2)
     for (int i=0; i<Nm; i++) {
       double k = this->k[i] * bendoverScale;
       double Gk = pow(k, q) / pow(1 + k*k, (s+q)/2);
       Ak[i] = Gk * delta_k0 * k;
-      Ak2_sum += Ak[i];
+
+      // compute the prefix sum
+      if (i == 0) {
+        Ak2_sums[0] = Ak[0];
+      } else {
+	Ak2_sums[i] = Ak[i] + Ak2_sums[i-1];
+      }
     }
-    //only in this loop are the actual Ak computed and stored
-    //(this two-step process is necessary in order to normalize the values properly)
+    // only in this loop are the Ak computed and stored (though without the normalization factor, which will have to be multiplied on from the appropriate position of the normalizationFactors array.)
+    // technically, we could do this all in one loop, but I'm keeping the two-loop structure for now, to make it clearer what happens
     for (int i=0; i<Nm; i++) {
-      Ak[i] = sqrt(Ak[i] / Ak2_sum * 2) * Brms;
+      Ak[i] = sqrt(Ak[i]);
+      normalizationFactors[i] = sqrt(1./Ak2_sums[i] * 2) * Brms;
     }
 
     // generate direction, phase, and polarization for each wavemode
@@ -203,15 +211,33 @@ float hsum_float_sse3(__m128 v) {
     }
 }
 
-Vector3d TD13Field::getField(const Vector3d& pos) const {
+  Vector3d TD13Field::getField(const Vector3d& pos) const {
+    return getFieldToIndex(pos, Nm);
+  }
+
+  Vector3d TD13Field::getFieldWithScale(const Vector3d& pos, double kmax) const {
+
+  }
+
+Vector3d TD13Field::getFieldToIndex(const Vector3d& pos, int maxIndex) const {
+
+  if (maxIndex > Nm) {
+    throw std::runtime_error("maxIndex is too large! It should be equal to at most the number of wavemodes (Nm).");
+  }
+  maxIndex = ((maxIndex + 4-1)/8)*8; // round up to next multiple of 4, since SIMD works in blocks of four wavemodes and using all of the last four won't make it slower (#SIMDWIDTH). In fact, this is easier (and faster) than having to mask out unused wavemodes in the last iteration. While it will make the normal version slower (on average), I want them to stay comparable.
 
 #ifndef FAST_TD13
   Vector3d B(0.);
   
-  for (int i=0; i<Nm; i++) {
+  // if maxIndex was rounded to the next larger multiple of 4, but this makes it larger than the number of available wavemodes, round down again
+  // this is a somewhat ugly edge-case: this is still equivalent to the SIMD versions, since it will use a higher maxIndex, but these wavemodes will be zero.
+  maxIndex = max(maxIndex, Nm);
+  for (int i=0; i<maxIndex; i++) {
     double z_ = pos.dot(kappa[i]);
     B += xi[i] * Ak[i] * cos(k[i] * z_ + beta[i]);
   }
+
+  B *= normalizationFactors[Nm-1];
 
   return B;
 
@@ -235,7 +261,7 @@ Vector3d TD13Field::getField(const Vector3d& pos) const {
   __m128 pos1 = _mm_set1_ps(pos.y);
   __m128 pos2 = _mm_set1_ps(pos.z);
 
-  for (int i=0; i<avx_Nm; i+=4) {
+  for (int i=0; i<maxIndex; i+=4) {
 
     // load data from memory into AVX registers
     __m128 Axi0 = _mm_load_ps(avx_data.data() + i + align_offset + avx_Nm*iAxi0);
@@ -271,10 +297,13 @@ Vector3d TD13Field::getField(const Vector3d& pos) const {
     acc2 = _mm_add_ps(_mm_mul_ps(mag, Axi2), acc2);
   }
   
-  return Vector3d(hsum_float_sse3(acc0),
-                  hsum_float_sse3(acc1),
-                  hsum_float_sse3(acc2)
-                  );
+  Vector3d B = Vector3d(hsum_float_sse3(acc0),
+			hsum_float_sse3(acc1),
+			hsum_float_sse3(acc2)
+			);
+
+  return B * normalizationFactors[Nm-1];
+
 #endif // FAST_TD13
 }
 

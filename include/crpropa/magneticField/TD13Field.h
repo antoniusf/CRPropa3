@@ -46,6 +46,7 @@ private:
   std::vector<float> avx_data;
   std::vector<double> Ak;
   std::vector<double> k;
+  std::vector<double> normalizationFactors;
 
   int Nm;
 
@@ -88,6 +89,10 @@ public:
      Theoretical runtime is O(Nm), where Nm is the number of wavemodes.
 */
   Vector3d getField(const Vector3d& pos) const;
+
+  Vector3d getFieldWithScale(const Vector3d& pos, double kmax) const;
+
+  Vector3d getFieldToIndex(const Vector3d& pos, int maxIndex) const;
 
   // versions:
   // 4: introduce field versioning;

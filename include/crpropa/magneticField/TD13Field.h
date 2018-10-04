@@ -46,7 +46,6 @@ private:
   std::vector<float> avx_data;
   std::vector<double> Ak;
   std::vector<double> k;
-  std::vector<double> normalizationFactors;
 
   int Nm;
 

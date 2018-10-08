@@ -118,10 +118,57 @@ float hsum_float_sse3(__m128 v) {
       Ak[i] = Gk * delta_k0 * k;
       Ak2_sum += Ak[i];
     }
-    //only in this loop are the actual Ak computed and stored
-    //(this two-step process is necessary in order to normalize the values properly)
+
+    // To normalize the spectrum to Brms, we basically need to compute
+    // the area under the spectral distribution. Now, if the <delta_k>s
+    // are all correct, this integral is actually approximated
+    // numerically by Ak2_sum. That is, at least, so long as we
+    // consider the integral from kmin to kmax.
+    //
+    // However, from my current point of view, kmin seems to have a
+    // lot more physical relevance than kmax. The correlation length
+    // is clearly a physical property of the field, and it's formula
+    // depends on both kmin and kmax. However, when kmin and kmax are
+    // very far apart (maybe two orders of magnitude), the correlation
+    // length effectively stops depending on kmax and becomes nearly
+    // linear in kmin.
+    //
+    // So what meaning, then, does kmax have? This is actually an
+    // important question, because the normalization factor for all
+    // other wavemodes depends on it. Simply adding more wavemodes at
+    // the top will scale all other wavemodes down, to conserve
+    // Brms. The effect of this will not be particularly large,
+    // considering that the higher wavemodes only contribute very
+    // little due to the power law distribution.
+    //
+    // This leads to the approach of normalizing the wavemodes as if
+    // the spectrum went from kmin to infinity. This removes kmax
+    // completely from the equation, but the additional contribution
+    // stays negligible.
+    //
+    // ## Implementation
+    //
+    // So, instead of dividing by Ak2_sum (which is roughly equivalent
+    // to the integral from kmin to kmax), we want to normalize with
+    // the integral from kmin to infinity. We could simply divide by
+    // this integral instead, but then the correctness of the
+    // resulting value would depend on the correctness of the
+    // <delta_k>s, and I don't really want to rely on that. The more
+    // elegant solution seems to be (to me), to divide out the Ak2_sum
+    // first, nullifying any problems with the <delta_k>s, then
+    // multiplying the value from kmin to kmax back in, and finally
+    // normalizing to the value of the integral from kmin to infinity.
+
+    // integral from kmin to kmax
+    double theoretical_Ak2_sum = 1/(s-1) * (pow(kmin, -s+1) - pow(kmax, -s+1));
+    // integral from kmin to infinity
+    double normalization_factor = 1/(s-1) * pow(kmin, -s+1);
+    
+    // only in this loop are the actual Ak computed and stored
+    // (this two-step process is necessary in order to normalize the values properly)
     for (int i=0; i<Nm; i++) {
-      Ak[i] = sqrt(Ak[i] / Ak2_sum * 2) * Brms;
+      Ak[i] = sqrt(2 * Ak[i] / Ak2_sum * theoretical_Ak2_sum / normalization_factor)
+	* Brms;
     }
 
     // generate direction, phase, and polarization for each wavemode

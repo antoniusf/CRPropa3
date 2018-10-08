@@ -67,15 +67,14 @@ public:
   /**
       Create a new instance of TD13Field with the specified parameters. This generates all of the wavemodes according to the given parameters.
       @param Brms root mean square field strength for generated field
-      @param kmin wave number of the mode with the largest wavelength to be included in the spectrum
-      @param kmax wave number of the mode with the smallest wavelength to be included in the spectrum
+      @param lcorr the correlation length
       @param gamma the spectral index, as defined in the TD13 paper. Usually, you'd want to use 5/3 here, which will be comparable to passing -11/3 to `initTurbulence`.
-      @param bendoverScale the turbulence bend-over scale, used to scale the wavenumbers. As per the TD13 paper, this is set to 0.03AU by default.
+      @param range How wide a range of wavemodes should be covered. This is the desired ratio between minimal and maximal k (range = kmax/kmin). Internally, this is combined with lcorr to determine kmin and kmax, the minimal and maximal wavenumbers that will be present in the final spectrum.
       @param Nm number of wavemodes that will be used when computing the field. A higher value will give a more accurate representation of the turbulence, but increase the runtime for getField.
       @param seed can be used to seed the random number generator used to generate the field. This works just like in initTurbulence: a seed of 0 will lead to a randomly initialized RNG.
 */
-  TD13Field(double Brms, double kmin, double kmax, double s = 5/3.,
-	    double bendoverScale = 4.5e9, int Nm = 100, int seed = 0);
+  TD13Field(double Brms, double lcorr, double s = 5/3., double range = 100.,
+	    int Nm = 100, int seed = 0);
 
   // TODO: bendoverScale: figure out how to improve this, b/c it takes up space in the constructor arguments
   // (Lukas's suggestion was to use a setter for this, but it turns out that's not that easy
@@ -96,8 +95,10 @@ public:
   // versions:
   // 4: introduce field versioning;
   //    add volume correction factor   
+  // 5: switch to pure power-law spectrum
+  // 6: switch from kmin&kmax to lcorr&range
   static int fieldVersion() {
-    return 4;
+    return 6;
   }
 };
 

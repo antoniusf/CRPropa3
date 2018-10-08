@@ -113,7 +113,7 @@ void JF12Field::randomTurbulentTD13(int Nm, int seed) {
 	useTurbulent = true;
 	useTD13 = true;
 	// turbulent field with Kolmogorov spectrum, B_rms = 1 and Lc = 60 parsec
-	td13Field = new TD13Field(1, 2*M_PI/(272*parsec), 2*M_PI/(8*parsec), -11/3., 4.5e6, Nm, seed);
+	td13Field = new TD13Field(1, 2*M_PI/(272*parsec), 2*M_PI/(8*parsec), 5/3., Nm, seed);
 }
 
 void JF12Field::setStriatedGrid(ref_ptr<ScalarGrid> grid) {

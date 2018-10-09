@@ -88,8 +88,8 @@ float hsum_float_sse3(__m128 v) {
     // that they need to subtract two from their index, and we don't.
 
     double lmax = 2*lcorr * s/(s-1) * (1 - pow(range, s-1)) / (1 - pow(range, s));
-    double kmax = 2*M_PI / lmax;
-    double kmin = kmax / range;
+    kmax = 2*M_PI / lmax;
+    kmin = kmax / range;
 
     std::cout << turbulentCorrelationLength(2*M_PI/kmax, 2*M_PI/kmin, -s-2) << std::endl;
 
@@ -257,24 +257,19 @@ float hsum_float_sse3(__m128 v) {
 }
 
   Vector3d TD13Field::getField(const Vector3d& pos) const {
-    return getFieldToIndex(pos, Nm);
+    return getFieldToWavenumber(pos, kmax);
   }
 
-  Vector3d TD13Field::getFieldWithScale(const Vector3d& pos, double kmax) const {
+Vector3d TD13Field::getFieldToWavenumber(const Vector3d& pos, double maxK) const {
 
+  if (maxK < kmin) {
+    KISS_LOG_WARNING << "TD13Field::getFieldToWavenumber: The maximum k you passed into this call is smaller than the current field's fixed kmin value (" << maxK << " < " << kmin << "); the resulting field will be zero." << std::endl;
   }
-
-Vector3d TD13Field::getFieldToIndex(const Vector3d& pos, int maxIndex) const {
-
-  if (maxIndex > Nm) {
-    throw std::runtime_error("maxIndex is too large! It should be equal to at most the number of wavemodes (Nm).");
-  }
-  maxIndex = ((maxIndex + 4-1)/8)*8; // round up to next multiple of 4, since SIMD works in blocks of four wavemodes and using all of the last four won't make it slower (#SIMDWIDTH). In fact, this is easier (and faster) than having to mask out unused wavemodes in the last iteration. While it will make the normal version slower (on average), I want them to stay comparable.
 
 #ifndef FAST_TD13
   Vector3d B(0.);
   
-  for (int i=0; i<Nm; i++) {
+  for (int i=0; (i<Nm) && (k[i] <= maxK); i++) {
     double z_ = pos.dot(kappa[i]);
     B += xi[i] * Ak[i] * cos(k[i] * z_ + beta[i]);
   }
@@ -301,7 +296,17 @@ Vector3d TD13Field::getFieldToIndex(const Vector3d& pos, int maxIndex) const {
   __m128 pos1 = _mm_set1_ps(pos.y);
   __m128 pos2 = _mm_set1_ps(pos.z);
 
-  for (int i=0; i<avx_Nm; i+=4) {
+  // Note: There is a little subtlety here in that the loop condition
+  // is very similar to the non-SIMD version, but there is an
+  // important difference here.  The SIMD loop goes in steps of 4
+  // wavemodes, and we check against the k of the first wavemode. This
+  // ensures that the highest matching wavemodes is actually a part of
+  // the result, but it means that we may include wavemodes higher
+  // than that (namely the other three wavemodes in the same
+  // batch). We do this because its basically free and cheaper than
+  // the alternative (masking out the non-matching wavemodes), and it
+  // should only make the result better, not worse.
+  for (int i=0; (i<avx_Nm) && (k[i] <= maxK); i+=4) {
 
     // load data from memory into AVX registers
     __m128 Axi0 = _mm_load_ps(avx_data.data() + i + align_offset + avx_Nm*iAxi0);

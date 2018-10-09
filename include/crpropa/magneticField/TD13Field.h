@@ -47,6 +47,9 @@ private:
   std::vector<double> Ak;
   std::vector<double> k;
 
+  double kmin;
+  double kmax;
+
   int Nm;
 
   int avx_Nm;
@@ -88,9 +91,7 @@ public:
 */
   Vector3d getField(const Vector3d& pos) const;
 
-  Vector3d getFieldWithScale(const Vector3d& pos, double kmax) const;
-
-  Vector3d getFieldToIndex(const Vector3d& pos, int maxIndex) const;
+  Vector3d getFieldToWavenumber(const Vector3d& pos, double maxK) const;
 
   // versions:
   // 4: introduce field versioning;

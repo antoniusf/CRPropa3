@@ -4,6 +4,7 @@
 #include "crpropa/Referenced.h"
 #include "crpropa/Vector3.h"
 #include <vector>
+#include <Eigen/Dense>
 
 namespace crpropa {
 
@@ -47,6 +48,7 @@ class Grid: public Referenced {
 	Vector3d gridOrigin; /**< Grid origin */
 	double spacing; /**< Distance between grid points, determines the extension of the grid */
 	bool reflective; /**< If set to true, the grid is repeated reflectively instead of periodically */
+        Eigen::Matrix<float, 64, 64> makePolynomeCoefficients; /**< This matrix is used to compute the actual interpolation polynome for each cell from the field values and their derivatives.
 
 public:
 	/** Constructor for cubic grid
@@ -198,26 +200,130 @@ public:
 		double fz = r.z - floor(r.z);
 		double fZ = 1 - fz;
 
-		// trilinear interpolation (see http://paulbourke.net/miscellaneous/interpolation)
-		T b(0.);
-		//V000 (1 - x) (1 - y) (1 - z) +
-		b += get(ix, iy, iz) * fX * fY * fZ;
-		//V100 x (1 - y) (1 - z) +
-		b += get(iX, iy, iz) * fx * fY * fZ;
-		//V010 (1 - x) y (1 - z) +
-		b += get(ix, iY, iz) * fX * fy * fZ;
-		//V001 (1 - x) (1 - y) z +
-		b += get(ix, iy, iZ) * fX * fY * fz;
-		//V101 x (1 - y) z +
-		b += get(iX, iy, iZ) * fx * fY * fz;
-		//V011 (1 - x) y z +
-		b += get(ix, iY, iZ) * fX * fy * fz;
-		//V110 x y (1 - z) +
-		b += get(iX, iY, iz) * fx * fy * fZ;
-		//V111 x y z
-		b += get(iX, iY, iZ) * fx * fy * fz;
+// The following code (beginning at the end of this comment block, and
+// ending just above the "END PYTRICUBIC" mark) was taken and modified
+// from Daniel Guterding's pytricubic library, under the following
+// license:
+//
+// MIT License
+//
+// Copyright (c) 2018 Daniel Guterding
+// 
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
-		return b;
+                // compute interpolation polynomial for the current grid cell
+                // TODO: caching
+                Eigen::Matrix<float, 64, 1> x;
+                x <<
+                    // values of f(x,y,z) at each corner.
+                    get(ix, iy, iz),
+                    get(ix + 1, iy, iz), get(ix, iy + 1, iz),
+                    get(ix + 1, iy + 1, iz), get(ix, iy, iz + 1), get(ix + 1, iy, iz + 1),
+                    get(ix, iy + 1, iz + 1), get(ix + 1, iy + 1, iz + 1),
+                    // values of df/dx at each corner.
+                    0.5 * (get(ix + 1, iy, iz) - get(ix - 1, iy, iz)),
+                    0.5 * (get(ix + 2, iy, iz) - get(ix, iy, iz)),
+                    0.5 * (get(ix + 1, iy + 1, iz) - get(ix - 1, iy + 1, iz)),
+                    0.5 * (get(ix + 2, iy + 1, iz) - get(ix, iy + 1, iz)),
+                    0.5 * (get(ix + 1, iy, iz + 1) - get(ix - 1, iy, iz + 1)),
+                    0.5 * (get(ix + 2, iy, iz + 1) - get(ix, iy, iz + 1)),
+                    0.5 * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1)),
+                    0.5 * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1)),
+                    // values of df/dy at each corner.
+                    0.5 * (get(ix, iy + 1, iz) - get(ix, iy - 1, iz)),
+                    0.5 * (get(ix + 1, iy + 1, iz) - get(ix + 1, iy - 1, iz)),
+                    0.5 * (get(ix, iy + 2, iz) - get(ix, iy, iz)),
+                    0.5 * (get(ix + 1, iy + 2, iz) - get(ix + 1, iy, iz)),
+                    0.5 * (get(ix, iy + 1, iz + 1) - get(ix, iy - 1, iz + 1)),
+                    0.5 * (get(ix + 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1)),
+                    0.5 * (get(ix, iy + 2, iz + 1) - get(ix, iy, iz + 1)),
+                    0.5 * (get(ix + 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1)),
+                    // values of df/dz at each corner.
+                    0.5 * (get(ix, iy, iz + 1) - get(ix, iy, iz - 1)),
+                    0.5 * (get(ix + 1, iy, iz + 1) - get(ix + 1, iy, iz - 1)),
+                    0.5 * (get(ix, iy + 1, iz + 1) - get(ix, iy + 1, iz - 1)),
+                    0.5 * (get(ix + 1, iy + 1, iz + 1) - get(ix + 1, iy + 1, iz - 1)),
+                    0.5 * (get(ix, iy, iz + 2) - get(ix, iy, iz)),
+                    0.5 * (get(ix + 1, iy, iz + 2) - get(ix + 1, iy, iz)),
+                    0.5 * (get(ix, iy + 1, iz + 2) - get(ix, iy + 1, iz)),
+                    0.5 * (get(ix + 1, iy + 1, iz + 2) - get(ix + 1, iy + 1, iz)),
+                    // values of d2f/dxdy at each corner.
+                    0.25 * (get(ix + 1, iy + 1, iz) - get(ix - 1, iy + 1, iz) - get(ix + 1, iy - 1, iz) + get(ix - 1, iy - 1, iz)),
+                    0.25 * (get(ix + 2, iy + 1, iz) - get(ix, iy + 1, iz) - get(ix + 2, iy - 1, iz) + get(ix, iy - 1, iz)),
+                    0.25 * (get(ix + 1, iy + 2, iz) - get(ix - 1, iy + 2, iz) - get(ix + 1, iy, iz) + get(ix - 1, iy, iz)),
+                    0.25 * (get(ix + 2, iy + 2, iz) - get(ix, iy + 2, iz) - get(ix + 2, iy, iz) + get(ix, iy, iz)),
+                    0.25 * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1) + get(ix - 1, iy - 1, iz + 1)),
+                    0.25 * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1) - get(ix + 2, iy - 1, iz + 1) + get(ix, iy - 1, iz + 1)),
+                    0.25 * (get(ix + 1, iy + 2, iz + 1) - get(ix - 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1) + get(ix - 1, iy, iz + 1)),
+                    0.25 * (get(ix + 2, iy + 2, iz + 1) - get(ix, iy + 2, iz + 1) - get(ix + 2, iy, iz + 1) + get(ix, iy, iz + 1)),
+                    // values of d2f/dxdz at each corner.
+                    0.25 * (get(ix + 1, iy, iz + 1) - get(ix - 1, iy, iz + 1) - get(ix + 1, iy, iz - 1) + get(ix - 1, iy, iz - 1)),
+                    0.25 * (get(ix + 2, iy, iz + 1) - get(ix, iy, iz + 1) - get(ix + 2, iy, iz - 1) + get(ix, iy, iz - 1)),
+                    0.25 * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1) - get(ix + 1, iy + 1, iz - 1) + get(ix - 1, iy + 1, iz - 1)),
+                    0.25 * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1) - get(ix + 2, iy + 1, iz - 1) + get(ix, iy + 1, iz - 1)),
+                    0.25 * (get(ix + 1, iy, iz + 2) - get(ix - 1, iy, iz + 2) - get(ix + 1, iy, iz) + get(ix - 1, iy, iz)),
+                    0.25 * (get(ix + 2, iy, iz + 2) - get(ix, iy, iz + 2) - get(ix + 2, iy, iz) + get(ix, iy, iz)),
+                    0.25 * (get(ix + 1, iy + 1, iz + 2) - get(ix - 1, iy + 1, iz + 2) - get(ix + 1, iy + 1, iz) + get(ix - 1, iy + 1, iz)),
+                    0.25 * (get(ix + 2, iy + 1, iz + 2) - get(ix, iy + 1, iz + 2) - get(ix + 2, iy + 1, iz) + get(ix, iy + 1, iz)),
+                    // values of d2f/dydz at each corner.
+                    0.25 * (get(ix, iy + 1, iz + 1) - get(ix, iy - 1, iz + 1) - get(ix, iy + 1, iz - 1) + get(ix, iy - 1, iz - 1)),
+                    0.25 * (get(ix + 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1) - get(ix + 1, iy + 1, iz - 1) + get(ix + 1, iy - 1, iz - 1)),
+                    0.25 * (get(ix, iy + 2, iz + 1) - get(ix, iy, iz + 1) - get(ix, iy + 2, iz - 1) + get(ix, iy, iz - 1)),
+                    0.25 * (get(ix + 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1) - get(ix + 1, iy + 2, iz - 1) + get(ix + 1, iy, iz - 1)),
+                    0.25 * (get(ix, iy + 1, iz + 2) - get(ix, iy - 1, iz + 2) - get(ix, iy + 1, iz) + get(ix, iy - 1, iz)),
+                    0.25 * (get(ix + 1, iy + 1, iz + 2) - get(ix + 1, iy - 1, iz + 2) - get(ix + 1, iy + 1, iz) + get(ix + 1, iy - 1, iz)),
+                    0.25 * (get(ix, iy + 2, iz + 2) - get(ix, iy, iz + 2) - get(ix, iy + 2, iz) + get(ix, iy, iz)),
+                    0.25 * (get(ix + 1, iy + 2, iz + 2) - get(ix + 1, iy, iz + 2) - get(ix + 1, iy + 2, iz) + get(ix + 1, iy, iz)),
+                    // values of d3f/dxdydz at each corner.
+                    0.125 * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1) + get(ix - 1, iy - 1, iz + 1) - get(ix + 1, iy + 1, iz - 1) + get(ix - 1, iy + 1, iz - 1) + get(ix + 1, iy - 1, iz - 1) - get(ix - 1, iy - 1, iz - 1)),
+                    0.125 * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1) - get(ix + 2, iy - 1, iz + 1) + get(ix, iy - 1, iz + 1) - get(ix + 2, iy + 1, iz - 1) + get(ix, iy + 1, iz - 1) + get(ix + 2, iy - 1, iz - 1) - get(ix, iy - 1, iz - 1)),
+                    0.125 * (get(ix + 1, iy + 2, iz + 1) - get(ix - 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1) + get(ix - 1, iy, iz + 1) - get(ix + 1, iy + 2, iz - 1) + get(ix - 1, iy + 2, iz - 1) + get(ix + 1, iy, iz - 1) - get(ix - 1, iy, iz - 1)),
+                    0.125 * (get(ix + 2, iy + 2, iz + 1) - get(ix, iy + 2, iz + 1) - get(ix + 2, iy, iz + 1) + get(ix, iy, iz + 1) - get(ix + 2, iy + 2, iz - 1) + get(ix, iy + 2, iz - 1) + get(ix + 2, iy, iz - 1) - get(ix, iy, iz - 1)),
+                    0.125 * (get(ix + 1, iy + 1, iz + 2) - get(ix - 1, iy + 1, iz + 2) - get(ix + 1, iy - 1, iz + 2) + get(ix - 1, iy - 1, iz + 2) - get(ix + 1, iy + 1, iz) + get(ix - 1, iy + 1, iz) + get(ix + 1, iy - 1, iz) - get(ix - 1, iy - 1, iz)),
+                    0.125 * (get(ix + 2, iy + 1, iz + 2) - get(ix, iy + 1, iz + 2) - get(ix + 2, iy - 1, iz + 2) + get(ix, iy - 1, iz + 2) - get(ix + 2, iy + 1, iz) + get(ix, iy + 1, iz) + get(ix + 2, iy - 1, iz) - get(ix, iy - 1, iz)),
+                    0.125 * (get(ix + 1, iy + 2, iz + 2) - get(ix - 1, iy + 2, iz + 2) - get(ix + 1, iy, iz + 2) + get(ix - 1, iy, iz + 2) - get(ix + 1, iy + 2, iz) + get(ix - 1, iy + 2, iz) + get(ix + 1, iy, iz) - get(ix - 1, iy, iz)),
+                    0.125 * (get(ix + 2, iy + 2, iz + 2) - get(ix, iy + 2, iz + 2) - get(ix + 2, iy, iz + 2) + get(ix, iy, iz + 2) - get(ix + 2, iy + 2, iz) + get(ix, iy + 2, iz) + get(ix + 2, iy, iz) - get(ix, iy, iz));
+
+                // Convert voxel values and partial derivatives to interpolation coefficients.
+                // pytricubic caches these coefficients in case the next call queries the same voxel.
+                // We can't do this currently since interpolate is const.
+                Eigen::Matrix<float, 64, 1> _coefs;
+                _coefs = makePolynomeCoefficients * x;
+
+
+                // evaluate the interpolation polynomial at (fx, fy, fz)
+		T result(0.);
+                int ijkn(0);
+                float fzpow(1);
+
+                for (int k = 0; k < 4; ++k) {
+                        float fypow(1);
+                        for (int j = 0; j < 4; ++j) {
+                                result += fypow * fzpow * (_coefs[ijkn] + fx * (_coefs[ijkn + 1] + fx * (_coefs[ijkn + 2] + fx * _coefs[ijkn + 3])));
+                                ijkn += 4;
+                                fypow *= fy;
+                        }
+                        fzpow *= fz;
+                }
+                return result;
+
+                // END PYTRICUBIC
 	}
 };
 

@@ -4,7 +4,7 @@
 #include "crpropa/Referenced.h"
 #include "crpropa/Vector3.h"
 #include <vector>
-#include <Eigen/Dense>
+#include <Eigen/Core>
 
 namespace crpropa {
 

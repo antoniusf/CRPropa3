@@ -22,6 +22,14 @@ inline void reflectiveClamp(double x, int n, int &lo, int &hi) {
 	hi = lo + (lo < n-1);
 }
 
+ inline int periodicBoundary(int index, int n) {
+   return ((index % n) + n) % n;
+ }
+
+ inline int reflectiveBoundary(int index, int n) {
+   return 0;
+ }
+
 /** Symmetrical round */
 inline double round(double r) {
     return (r > 0.0) ? floor(r + 0.5) : ceil(r - 0.5);
@@ -49,6 +57,7 @@ class Grid: public Referenced {
 	double spacing; /**< Distance between grid points, determines the extension of the grid */
 	bool reflective; /**< If set to true, the grid is repeated reflectively instead of periodically */
         Eigen::Matrix<float, 64, 64> makePolynomeCoefficients; /**< This matrix is used to compute the actual interpolation polynome for each cell from the field values and their derivatives. */
+	int component;
 
 public:
 	/** Constructor for cubic grid
@@ -61,6 +70,7 @@ public:
 		setGridSize(N, N, N);
 		setSpacing(spacing);
 		setReflective(false);
+		component = 0;
 	}
 
 	/** Constructor for non-cubic grid
@@ -75,6 +85,7 @@ public:
 		setGridSize(Nx, Ny, Nz);
 		setSpacing(spacing);
 		setReflective(false);
+		component = 0;
 	}
 
 	void setOrigin(Vector3d origin) {
@@ -133,6 +144,18 @@ public:
 		return grid[ix * Ny * Nz + iy * Nz + iz];
 	}
 
+	const T &periodicGet(size_t ix, size_t iy, size_t iz) const {
+	        ix = periodicBoundary(ix, Nx);
+	        iy = periodicBoundary(iy, Ny);
+	        iz = periodicBoundary(iz, Nz);
+		return grid[ix * Ny * Nz + iy * Nz + iz];
+	}
+
+	// This is a somewhat ugly intermediary solution just to get the interpolation working. pytricubic can only operate on single floats/doubles (this is related to the fact that it uses Eigen's matrix multiplication), so I'm defining getComponent as a workaround. It's ugly bc it only works for float and Vector3f (... oh the mess when all of these template constructs break down...), but this should not be a problem currently since no other instantiations of Grid are used.
+	const float getComponent(size_t ix, size_t iy, size_t iz) const {
+	  throw std::runtime_error("Grid.h: Was instanciated with a type other than float or Vector3f. We can't handle this case currently, I'm sorry.");
+	}
+
 	T getValue(size_t ix, size_t iy, size_t iz) {
 		return grid[ix * Ny * Nz + iy * Nz + iz];
 	}
@@ -176,163 +199,194 @@ public:
 	}
 
 	/** Interpolate the grid at a given position */
-	T interpolate(const Vector3d &position) const;
+	T interpolate(const Vector3d &position);
+
+	float interpolateComponent(const Vector3d &position) const {
+	    // position on a unit grid
+	    Vector3d r = (position - gridOrigin) / spacing;
+
+	    // indices of lower and upper neighbors
+	    int ix, iX, iy, iY, iz, iZ;
+	    if (reflective) {
+		    reflectiveClamp(r.x, Nx, ix, iX);
+		    reflectiveClamp(r.y, Ny, iy, iY);
+		    reflectiveClamp(r.z, Nz, iz, iZ);
+	    } else {
+		    periodicClamp(r.x, Nx, ix, iX);
+		    periodicClamp(r.y, Ny, iy, iY);
+		    periodicClamp(r.z, Nz, iz, iZ);
+	    }
+
+	    // linear fraction to lower and upper neighbors
+	    double fx = r.x - floor(r.x);
+	    double fX = 1 - fx;
+	    double fy = r.y - floor(r.y);
+	    double fY = 1 - fy;
+	    double fz = r.z - floor(r.z);
+	    double fZ = 1 - fz;
+
+    // The following code (beginning at the end of this comment block, and
+    // ending just above the "END PYTRICUBIC" mark) was taken and modified
+    // from Daniel Guterding's pytricubic library, under the following
+    // license:
+    //
+    // MIT License
+    //
+    // Copyright (c) 2018 Daniel Guterding
+    // 
+    // Permission is hereby granted, free of charge, to any person obtaining a copy
+    // of this software and associated documentation files (the "Software"), to deal
+    // in the Software without restriction, including without limitation the rights
+    // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    // copies of the Software, and to permit persons to whom the Software is
+    // furnished to do so, subject to the following conditions:
+    // 
+    // The above copyright notice and this permission notice shall be included in all
+    // copies or substantial portions of the Software.
+    // 
+    // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    // SOFTWARE.
+
+	    // compute interpolation polynomial for the current grid cell
+	    // TODO: caching
+	    Eigen::Matrix<float, 64, 1> x;
+	    x <<
+		// values of f(x,y,z) at each corner.
+		getComponent(ix, iy, iz),
+		getComponent(ix + 1, iy, iz), getComponent(ix, iy + 1, iz),
+		getComponent(ix + 1, iy + 1, iz), getComponent(ix, iy, iz + 1), getComponent(ix + 1, iy, iz + 1),
+		getComponent(ix, iy + 1, iz + 1), getComponent(ix + 1, iy + 1, iz + 1),
+		// values of df/dx at each corner.
+		0.5f * (getComponent(ix + 1, iy, iz) - getComponent(ix - 1, iy, iz)),
+		0.5f * (getComponent(ix + 2, iy, iz) - getComponent(ix, iy, iz)),
+		0.5f * (getComponent(ix + 1, iy + 1, iz) - getComponent(ix - 1, iy + 1, iz)),
+		0.5f * (getComponent(ix + 2, iy + 1, iz) - getComponent(ix, iy + 1, iz)),
+		0.5f * (getComponent(ix + 1, iy, iz + 1) - getComponent(ix - 1, iy, iz + 1)),
+		0.5f * (getComponent(ix + 2, iy, iz + 1) - getComponent(ix, iy, iz + 1)),
+		0.5f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix - 1, iy + 1, iz + 1)),
+		0.5f * (getComponent(ix + 2, iy + 1, iz + 1) - getComponent(ix, iy + 1, iz + 1)),
+		// values of df/dy at each corner.
+		0.5f * (getComponent(ix, iy + 1, iz) - getComponent(ix, iy - 1, iz)),
+		0.5f * (getComponent(ix + 1, iy + 1, iz) - getComponent(ix + 1, iy - 1, iz)),
+		0.5f * (getComponent(ix, iy + 2, iz) - getComponent(ix, iy, iz)),
+		0.5f * (getComponent(ix + 1, iy + 2, iz) - getComponent(ix + 1, iy, iz)),
+		0.5f * (getComponent(ix, iy + 1, iz + 1) - getComponent(ix, iy - 1, iz + 1)),
+		0.5f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix + 1, iy - 1, iz + 1)),
+		0.5f * (getComponent(ix, iy + 2, iz + 1) - getComponent(ix, iy, iz + 1)),
+		0.5f * (getComponent(ix + 1, iy + 2, iz + 1) - getComponent(ix + 1, iy, iz + 1)),
+		// values of df/dz at each corner.
+		0.5f * (getComponent(ix, iy, iz + 1) - getComponent(ix, iy, iz - 1)),
+		0.5f * (getComponent(ix + 1, iy, iz + 1) - getComponent(ix + 1, iy, iz - 1)),
+		0.5f * (getComponent(ix, iy + 1, iz + 1) - getComponent(ix, iy + 1, iz - 1)),
+		0.5f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix + 1, iy + 1, iz - 1)),
+		0.5f * (getComponent(ix, iy, iz + 2) - getComponent(ix, iy, iz)),
+		0.5f * (getComponent(ix + 1, iy, iz + 2) - getComponent(ix + 1, iy, iz)),
+		0.5f * (getComponent(ix, iy + 1, iz + 2) - getComponent(ix, iy + 1, iz)),
+		0.5f * (getComponent(ix + 1, iy + 1, iz + 2) - getComponent(ix + 1, iy + 1, iz)),
+		// values of d2f/dxdy at each corner.
+		0.25f * (getComponent(ix + 1, iy + 1, iz) - getComponent(ix - 1, iy + 1, iz) - getComponent(ix + 1, iy - 1, iz) + getComponent(ix - 1, iy - 1, iz)),
+		0.25f * (getComponent(ix + 2, iy + 1, iz) - getComponent(ix, iy + 1, iz) - getComponent(ix + 2, iy - 1, iz) + getComponent(ix, iy - 1, iz)),
+		0.25f * (getComponent(ix + 1, iy + 2, iz) - getComponent(ix - 1, iy + 2, iz) - getComponent(ix + 1, iy, iz) + getComponent(ix - 1, iy, iz)),
+		0.25f * (getComponent(ix + 2, iy + 2, iz) - getComponent(ix, iy + 2, iz) - getComponent(ix + 2, iy, iz) + getComponent(ix, iy, iz)),
+		0.25f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix - 1, iy + 1, iz + 1) - getComponent(ix + 1, iy - 1, iz + 1) + getComponent(ix - 1, iy - 1, iz + 1)),
+		0.25f * (getComponent(ix + 2, iy + 1, iz + 1) - getComponent(ix, iy + 1, iz + 1) - getComponent(ix + 2, iy - 1, iz + 1) + getComponent(ix, iy - 1, iz + 1)),
+		0.25f * (getComponent(ix + 1, iy + 2, iz + 1) - getComponent(ix - 1, iy + 2, iz + 1) - getComponent(ix + 1, iy, iz + 1) + getComponent(ix - 1, iy, iz + 1)),
+		0.25f * (getComponent(ix + 2, iy + 2, iz + 1) - getComponent(ix, iy + 2, iz + 1) - getComponent(ix + 2, iy, iz + 1) + getComponent(ix, iy, iz + 1)),
+		// values of d2f/dxdz at each corner.
+		0.25f * (getComponent(ix + 1, iy, iz + 1) - getComponent(ix - 1, iy, iz + 1) - getComponent(ix + 1, iy, iz - 1) + getComponent(ix - 1, iy, iz - 1)),
+		0.25f * (getComponent(ix + 2, iy, iz + 1) - getComponent(ix, iy, iz + 1) - getComponent(ix + 2, iy, iz - 1) + getComponent(ix, iy, iz - 1)),
+		0.25f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix - 1, iy + 1, iz + 1) - getComponent(ix + 1, iy + 1, iz - 1) + getComponent(ix - 1, iy + 1, iz - 1)),
+		0.25f * (getComponent(ix + 2, iy + 1, iz + 1) - getComponent(ix, iy + 1, iz + 1) - getComponent(ix + 2, iy + 1, iz - 1) + getComponent(ix, iy + 1, iz - 1)),
+		0.25f * (getComponent(ix + 1, iy, iz + 2) - getComponent(ix - 1, iy, iz + 2) - getComponent(ix + 1, iy, iz) + getComponent(ix - 1, iy, iz)),
+		0.25f * (getComponent(ix + 2, iy, iz + 2) - getComponent(ix, iy, iz + 2) - getComponent(ix + 2, iy, iz) + getComponent(ix, iy, iz)),
+		0.25f * (getComponent(ix + 1, iy + 1, iz + 2) - getComponent(ix - 1, iy + 1, iz + 2) - getComponent(ix + 1, iy + 1, iz) + getComponent(ix - 1, iy + 1, iz)),
+		0.25f * (getComponent(ix + 2, iy + 1, iz + 2) - getComponent(ix, iy + 1, iz + 2) - getComponent(ix + 2, iy + 1, iz) + getComponent(ix, iy + 1, iz)),
+		// values of d2f/dydz at each corner.
+		0.25f * (getComponent(ix, iy + 1, iz + 1) - getComponent(ix, iy - 1, iz + 1) - getComponent(ix, iy + 1, iz - 1) + getComponent(ix, iy - 1, iz - 1)),
+		0.25f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix + 1, iy - 1, iz + 1) - getComponent(ix + 1, iy + 1, iz - 1) + getComponent(ix + 1, iy - 1, iz - 1)),
+		0.25f * (getComponent(ix, iy + 2, iz + 1) - getComponent(ix, iy, iz + 1) - getComponent(ix, iy + 2, iz - 1) + getComponent(ix, iy, iz - 1)),
+		0.25f * (getComponent(ix + 1, iy + 2, iz + 1) - getComponent(ix + 1, iy, iz + 1) - getComponent(ix + 1, iy + 2, iz - 1) + getComponent(ix + 1, iy, iz - 1)),
+		0.25f * (getComponent(ix, iy + 1, iz + 2) - getComponent(ix, iy - 1, iz + 2) - getComponent(ix, iy + 1, iz) + getComponent(ix, iy - 1, iz)),
+		0.25f * (getComponent(ix + 1, iy + 1, iz + 2) - getComponent(ix + 1, iy - 1, iz + 2) - getComponent(ix + 1, iy + 1, iz) + getComponent(ix + 1, iy - 1, iz)),
+		0.25f * (getComponent(ix, iy + 2, iz + 2) - getComponent(ix, iy, iz + 2) - getComponent(ix, iy + 2, iz) + getComponent(ix, iy, iz)),
+		0.25f * (getComponent(ix + 1, iy + 2, iz + 2) - getComponent(ix + 1, iy, iz + 2) - getComponent(ix + 1, iy + 2, iz) + getComponent(ix + 1, iy, iz)),
+		// values of d3f/dxdydz at each corner.
+		0.125f * (getComponent(ix + 1, iy + 1, iz + 1) - getComponent(ix - 1, iy + 1, iz + 1) - getComponent(ix + 1, iy - 1, iz + 1) + getComponent(ix - 1, iy - 1, iz + 1) - getComponent(ix + 1, iy + 1, iz - 1) + getComponent(ix - 1, iy + 1, iz - 1) + getComponent(ix + 1, iy - 1, iz - 1) - getComponent(ix - 1, iy - 1, iz - 1)),
+		0.125f * (getComponent(ix + 2, iy + 1, iz + 1) - getComponent(ix, iy + 1, iz + 1) - getComponent(ix + 2, iy - 1, iz + 1) + getComponent(ix, iy - 1, iz + 1) - getComponent(ix + 2, iy + 1, iz - 1) + getComponent(ix, iy + 1, iz - 1) + getComponent(ix + 2, iy - 1, iz - 1) - getComponent(ix, iy - 1, iz - 1)),
+		0.125f * (getComponent(ix + 1, iy + 2, iz + 1) - getComponent(ix - 1, iy + 2, iz + 1) - getComponent(ix + 1, iy, iz + 1) + getComponent(ix - 1, iy, iz + 1) - getComponent(ix + 1, iy + 2, iz - 1) + getComponent(ix - 1, iy + 2, iz - 1) + getComponent(ix + 1, iy, iz - 1) - getComponent(ix - 1, iy, iz - 1)),
+		0.125f * (getComponent(ix + 2, iy + 2, iz + 1) - getComponent(ix, iy + 2, iz + 1) - getComponent(ix + 2, iy, iz + 1) + getComponent(ix, iy, iz + 1) - getComponent(ix + 2, iy + 2, iz - 1) + getComponent(ix, iy + 2, iz - 1) + getComponent(ix + 2, iy, iz - 1) - getComponent(ix, iy, iz - 1)),
+		0.125f * (getComponent(ix + 1, iy + 1, iz + 2) - getComponent(ix - 1, iy + 1, iz + 2) - getComponent(ix + 1, iy - 1, iz + 2) + getComponent(ix - 1, iy - 1, iz + 2) - getComponent(ix + 1, iy + 1, iz) + getComponent(ix - 1, iy + 1, iz) + getComponent(ix + 1, iy - 1, iz) - getComponent(ix - 1, iy - 1, iz)),
+		0.125f * (getComponent(ix + 2, iy + 1, iz + 2) - getComponent(ix, iy + 1, iz + 2) - getComponent(ix + 2, iy - 1, iz + 2) + getComponent(ix, iy - 1, iz + 2) - getComponent(ix + 2, iy + 1, iz) + getComponent(ix, iy + 1, iz) + getComponent(ix + 2, iy - 1, iz) - getComponent(ix, iy - 1, iz)),
+		0.125f * (getComponent(ix + 1, iy + 2, iz + 2) - getComponent(ix - 1, iy + 2, iz + 2) - getComponent(ix + 1, iy, iz + 2) + getComponent(ix - 1, iy, iz + 2) - getComponent(ix + 1, iy + 2, iz) + getComponent(ix - 1, iy + 2, iz) + getComponent(ix + 1, iy, iz) - getComponent(ix - 1, iy, iz)),
+		0.125f * (getComponent(ix + 2, iy + 2, iz + 2) - getComponent(ix, iy + 2, iz + 2) - getComponent(ix + 2, iy, iz + 2) + getComponent(ix, iy, iz + 2) - getComponent(ix + 2, iy + 2, iz) + getComponent(ix, iy + 2, iz) + getComponent(ix + 2, iy, iz) - getComponent(ix, iy, iz));
+
+	    // Convert voxel values and partial derivatives to interpolation coefficients.
+	    // pytricubic caches these coefficients in case the next call queries the same voxel.
+	    // We can't do this currently since interpolate is const.
+	    Eigen::Matrix<float, 64, 1> _coefs;
+	    _coefs = makePolynomeCoefficients * x;
+
+
+	    // evaluate the interpolation polynomial at (fx, fy, fz)
+	    float result(0.);
+	    int ijkn(0);
+	    float fzpow(1);
+
+	    for (int k = 0; k < 4; ++k) {
+		    float fypow(1);
+		    for (int j = 0; j < 4; ++j) {
+			    result += fypow * fzpow * (_coefs[ijkn] + fx * (_coefs[ijkn + 1] + fx * (_coefs[ijkn + 2] + fx * _coefs[ijkn + 3])));
+			    ijkn += 4;
+			    fypow *= fy;
+		    }
+		    fzpow *= fz;
+	    }
+	    return result;
+
+	    // END PYTRICUBIC
+	}
 };
 
 template <>
-inline float Grid<float>::interpolate(const Vector3d &position) const {
-	// position on a unit grid
-	Vector3d r = (position - gridOrigin) / spacing;
-
-	// indices of lower and upper neighbors
-	int ix, iX, iy, iY, iz, iZ;
-	if (reflective) {
-		reflectiveClamp(r.x, Nx, ix, iX);
-		reflectiveClamp(r.y, Ny, iy, iY);
-		reflectiveClamp(r.z, Nz, iz, iZ);
-	} else {
-		periodicClamp(r.x, Nx, ix, iX);
-		periodicClamp(r.y, Ny, iy, iY);
-		periodicClamp(r.z, Nz, iz, iZ);
-	}
-
-	// linear fraction to lower and upper neighbors
-	double fx = r.x - floor(r.x);
-	double fX = 1 - fx;
-	double fy = r.y - floor(r.y);
-	double fY = 1 - fy;
-	double fz = r.z - floor(r.z);
-	double fZ = 1 - fz;
-
-// The following code (beginning at the end of this comment block, and
-// ending just above the "END PYTRICUBIC" mark) was taken and modified
-// from Daniel Guterding's pytricubic library, under the following
-// license:
-//
-// MIT License
-//
-// Copyright (c) 2018 Daniel Guterding
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-	// compute interpolation polynomial for the current grid cell
-	// TODO: caching
-	Eigen::Matrix<float, 64, 1> x;
-	x <<
-	    // values of f(x,y,z) at each corner.
-	    get(ix, iy, iz),
-	    get(ix + 1, iy, iz), get(ix, iy + 1, iz),
-	    get(ix + 1, iy + 1, iz), get(ix, iy, iz + 1), get(ix + 1, iy, iz + 1),
-	    get(ix, iy + 1, iz + 1), get(ix + 1, iy + 1, iz + 1),
-	    // values of df/dx at each corner.
-	    0.5f * (get(ix + 1, iy, iz) - get(ix - 1, iy, iz)),
-	    0.5f * (get(ix + 2, iy, iz) - get(ix, iy, iz)),
-	    0.5f * (get(ix + 1, iy + 1, iz) - get(ix - 1, iy + 1, iz)),
-	    0.5f * (get(ix + 2, iy + 1, iz) - get(ix, iy + 1, iz)),
-	    0.5f * (get(ix + 1, iy, iz + 1) - get(ix - 1, iy, iz + 1)),
-	    0.5f * (get(ix + 2, iy, iz + 1) - get(ix, iy, iz + 1)),
-	    0.5f * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1)),
-	    0.5f * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1)),
-	    // values of df/dy at each corner.
-	    0.5f * (get(ix, iy + 1, iz) - get(ix, iy - 1, iz)),
-	    0.5f * (get(ix + 1, iy + 1, iz) - get(ix + 1, iy - 1, iz)),
-	    0.5f * (get(ix, iy + 2, iz) - get(ix, iy, iz)),
-	    0.5f * (get(ix + 1, iy + 2, iz) - get(ix + 1, iy, iz)),
-	    0.5f * (get(ix, iy + 1, iz + 1) - get(ix, iy - 1, iz + 1)),
-	    0.5f * (get(ix + 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1)),
-	    0.5f * (get(ix, iy + 2, iz + 1) - get(ix, iy, iz + 1)),
-	    0.5f * (get(ix + 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1)),
-	    // values of df/dz at each corner.
-	    0.5f * (get(ix, iy, iz + 1) - get(ix, iy, iz - 1)),
-	    0.5f * (get(ix + 1, iy, iz + 1) - get(ix + 1, iy, iz - 1)),
-	    0.5f * (get(ix, iy + 1, iz + 1) - get(ix, iy + 1, iz - 1)),
-	    0.5f * (get(ix + 1, iy + 1, iz + 1) - get(ix + 1, iy + 1, iz - 1)),
-	    0.5f * (get(ix, iy, iz + 2) - get(ix, iy, iz)),
-	    0.5f * (get(ix + 1, iy, iz + 2) - get(ix + 1, iy, iz)),
-	    0.5f * (get(ix, iy + 1, iz + 2) - get(ix, iy + 1, iz)),
-	    0.5f * (get(ix + 1, iy + 1, iz + 2) - get(ix + 1, iy + 1, iz)),
-	    // values of d2f/dxdy at each corner.
-	    0.25f * (get(ix + 1, iy + 1, iz) - get(ix - 1, iy + 1, iz) - get(ix + 1, iy - 1, iz) + get(ix - 1, iy - 1, iz)),
-	    0.25f * (get(ix + 2, iy + 1, iz) - get(ix, iy + 1, iz) - get(ix + 2, iy - 1, iz) + get(ix, iy - 1, iz)),
-	    0.25f * (get(ix + 1, iy + 2, iz) - get(ix - 1, iy + 2, iz) - get(ix + 1, iy, iz) + get(ix - 1, iy, iz)),
-	    0.25f * (get(ix + 2, iy + 2, iz) - get(ix, iy + 2, iz) - get(ix + 2, iy, iz) + get(ix, iy, iz)),
-	    0.25f * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1) + get(ix - 1, iy - 1, iz + 1)),
-	    0.25f * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1) - get(ix + 2, iy - 1, iz + 1) + get(ix, iy - 1, iz + 1)),
-	    0.25f * (get(ix + 1, iy + 2, iz + 1) - get(ix - 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1) + get(ix - 1, iy, iz + 1)),
-	    0.25f * (get(ix + 2, iy + 2, iz + 1) - get(ix, iy + 2, iz + 1) - get(ix + 2, iy, iz + 1) + get(ix, iy, iz + 1)),
-	    // values of d2f/dxdz at each corner.
-	    0.25f * (get(ix + 1, iy, iz + 1) - get(ix - 1, iy, iz + 1) - get(ix + 1, iy, iz - 1) + get(ix - 1, iy, iz - 1)),
-	    0.25f * (get(ix + 2, iy, iz + 1) - get(ix, iy, iz + 1) - get(ix + 2, iy, iz - 1) + get(ix, iy, iz - 1)),
-	    0.25f * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1) - get(ix + 1, iy + 1, iz - 1) + get(ix - 1, iy + 1, iz - 1)),
-	    0.25f * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1) - get(ix + 2, iy + 1, iz - 1) + get(ix, iy + 1, iz - 1)),
-	    0.25f * (get(ix + 1, iy, iz + 2) - get(ix - 1, iy, iz + 2) - get(ix + 1, iy, iz) + get(ix - 1, iy, iz)),
-	    0.25f * (get(ix + 2, iy, iz + 2) - get(ix, iy, iz + 2) - get(ix + 2, iy, iz) + get(ix, iy, iz)),
-	    0.25f * (get(ix + 1, iy + 1, iz + 2) - get(ix - 1, iy + 1, iz + 2) - get(ix + 1, iy + 1, iz) + get(ix - 1, iy + 1, iz)),
-	    0.25f * (get(ix + 2, iy + 1, iz + 2) - get(ix, iy + 1, iz + 2) - get(ix + 2, iy + 1, iz) + get(ix, iy + 1, iz)),
-	    // values of d2f/dydz at each corner.
-	    0.25f * (get(ix, iy + 1, iz + 1) - get(ix, iy - 1, iz + 1) - get(ix, iy + 1, iz - 1) + get(ix, iy - 1, iz - 1)),
-	    0.25f * (get(ix + 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1) - get(ix + 1, iy + 1, iz - 1) + get(ix + 1, iy - 1, iz - 1)),
-	    0.25f * (get(ix, iy + 2, iz + 1) - get(ix, iy, iz + 1) - get(ix, iy + 2, iz - 1) + get(ix, iy, iz - 1)),
-	    0.25f * (get(ix + 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1) - get(ix + 1, iy + 2, iz - 1) + get(ix + 1, iy, iz - 1)),
-	    0.25f * (get(ix, iy + 1, iz + 2) - get(ix, iy - 1, iz + 2) - get(ix, iy + 1, iz) + get(ix, iy - 1, iz)),
-	    0.25f * (get(ix + 1, iy + 1, iz + 2) - get(ix + 1, iy - 1, iz + 2) - get(ix + 1, iy + 1, iz) + get(ix + 1, iy - 1, iz)),
-	    0.25f * (get(ix, iy + 2, iz + 2) - get(ix, iy, iz + 2) - get(ix, iy + 2, iz) + get(ix, iy, iz)),
-	    0.25f * (get(ix + 1, iy + 2, iz + 2) - get(ix + 1, iy, iz + 2) - get(ix + 1, iy + 2, iz) + get(ix + 1, iy, iz)),
-	    // values of d3f/dxdydz at each corner.
-	    0.125f * (get(ix + 1, iy + 1, iz + 1) - get(ix - 1, iy + 1, iz + 1) - get(ix + 1, iy - 1, iz + 1) + get(ix - 1, iy - 1, iz + 1) - get(ix + 1, iy + 1, iz - 1) + get(ix - 1, iy + 1, iz - 1) + get(ix + 1, iy - 1, iz - 1) - get(ix - 1, iy - 1, iz - 1)),
-	    0.125f * (get(ix + 2, iy + 1, iz + 1) - get(ix, iy + 1, iz + 1) - get(ix + 2, iy - 1, iz + 1) + get(ix, iy - 1, iz + 1) - get(ix + 2, iy + 1, iz - 1) + get(ix, iy + 1, iz - 1) + get(ix + 2, iy - 1, iz - 1) - get(ix, iy - 1, iz - 1)),
-	    0.125f * (get(ix + 1, iy + 2, iz + 1) - get(ix - 1, iy + 2, iz + 1) - get(ix + 1, iy, iz + 1) + get(ix - 1, iy, iz + 1) - get(ix + 1, iy + 2, iz - 1) + get(ix - 1, iy + 2, iz - 1) + get(ix + 1, iy, iz - 1) - get(ix - 1, iy, iz - 1)),
-	    0.125f * (get(ix + 2, iy + 2, iz + 1) - get(ix, iy + 2, iz + 1) - get(ix + 2, iy, iz + 1) + get(ix, iy, iz + 1) - get(ix + 2, iy + 2, iz - 1) + get(ix, iy + 2, iz - 1) + get(ix + 2, iy, iz - 1) - get(ix, iy, iz - 1)),
-	    0.125f * (get(ix + 1, iy + 1, iz + 2) - get(ix - 1, iy + 1, iz + 2) - get(ix + 1, iy - 1, iz + 2) + get(ix - 1, iy - 1, iz + 2) - get(ix + 1, iy + 1, iz) + get(ix - 1, iy + 1, iz) + get(ix + 1, iy - 1, iz) - get(ix - 1, iy - 1, iz)),
-	    0.125f * (get(ix + 2, iy + 1, iz + 2) - get(ix, iy + 1, iz + 2) - get(ix + 2, iy - 1, iz + 2) + get(ix, iy - 1, iz + 2) - get(ix + 2, iy + 1, iz) + get(ix, iy + 1, iz) + get(ix + 2, iy - 1, iz) - get(ix, iy - 1, iz)),
-	    0.125f * (get(ix + 1, iy + 2, iz + 2) - get(ix - 1, iy + 2, iz + 2) - get(ix + 1, iy, iz + 2) + get(ix - 1, iy, iz + 2) - get(ix + 1, iy + 2, iz) + get(ix - 1, iy + 2, iz) + get(ix + 1, iy, iz) - get(ix - 1, iy, iz)),
-	    0.125f * (get(ix + 2, iy + 2, iz + 2) - get(ix, iy + 2, iz + 2) - get(ix + 2, iy, iz + 2) + get(ix, iy, iz + 2) - get(ix + 2, iy + 2, iz) + get(ix, iy + 2, iz) + get(ix + 2, iy, iz) - get(ix, iy, iz));
-
-	// Convert voxel values and partial derivatives to interpolation coefficients.
-	// pytricubic caches these coefficients in case the next call queries the same voxel.
-	// We can't do this currently since interpolate is const.
-	Eigen::Matrix<float, 64, 1> _coefs;
-	_coefs = makePolynomeCoefficients * x;
-
-
-	// evaluate the interpolation polynomial at (fx, fy, fz)
-	float result(0.);
-	int ijkn(0);
-	float fzpow(1);
-
-	for (int k = 0; k < 4; ++k) {
-		float fypow(1);
-		for (int j = 0; j < 4; ++j) {
-			result += fypow * fzpow * (_coefs[ijkn] + fx * (_coefs[ijkn + 1] + fx * (_coefs[ijkn + 2] + fx * _coefs[ijkn + 3])));
-			ijkn += 4;
-			fypow *= fy;
-		}
-		fzpow *= fz;
-	}
-	return result;
-
-	// END PYTRICUBIC
+inline const float Grid<float>::getComponent(size_t ix, size_t iy, size_t iz) const {
+  float result = periodicGet(ix, iy, iz);
+  return result;
 }
 
 template <>
-inline Vector3f Grid<Vector3f>::interpolate(const Vector3d &position) const {
-  return Vector3f(0.);
+inline const float Grid<Vector3f>::getComponent(size_t ix, size_t iy, size_t iz) const {
+  Vector3f result = periodicGet(ix, iy, iz);
+  if (component == 0) {
+    return result.x;
+  } else if (component == 1) {
+    return result.y;
+  } else if (component == 2) {
+    return result.z;
+  }
+}
+
+template <>
+inline float Grid<float>::interpolate(const Vector3d &position){
+  component = 0;
+  float result = interpolateComponent(position);
+  return result;
+}
+
+template <>
+inline Vector3f Grid<Vector3f>::interpolate(const Vector3d &position) {
+  Vector3f result = Vector3f(0.0f);
+  component = 0;
+  result.x = interpolateComponent(position);
+  component = 1;
+  result.y = interpolateComponent(position);
+  component = 2;
+  result.z = interpolateComponent(position);
+  return result;
 }
 
 typedef Grid<Vector3f> VectorGrid;

@@ -60,7 +60,7 @@ public:
 
 	    void process(crpropa::Candidate *candidate) const;
 
-	    void tryStep(const Vector3d &Pos, Vector3d &POut, Vector3d &PosErr, double z, double propStep ) const;
+	    void tryStep(const Vector3d &Pos, Vector3d &POut, Vector3d &PosErr, double z, double propStep, double rigidity ) const;
 	    void driftStep(const Vector3d &Pos, Vector3d &LinProp, double h) const;
 	    void calculateBTensor(double rig, double BTen[], Vector3d pos, Vector3d dir, double z) const;
 

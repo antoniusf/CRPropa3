@@ -49,7 +49,6 @@ private:
 
   double kmin;
   double kmax;
-
   int Nm;
 
   int avx_Nm;
@@ -67,6 +66,9 @@ private:
   static const int itotal = 7;
 
 public:
+
+  double rigidityToMaxWavemodeFactor; //< honestly I'm not going to write getters and setters for this right now because we have to test it first anyways
+
   /**
       Create a new instance of TD13Field with the specified parameters. This generates all of the wavemodes according to the given parameters.
       @param Brms root mean square field strength for generated field
@@ -90,6 +92,8 @@ public:
      Theoretical runtime is O(Nm), where Nm is the number of wavemodes.
 */
   Vector3d getField(const Vector3d& pos) const;
+
+  Vector3d getFieldForParticleRigidity(const Vector3d& pos, double rigidity) const;
 
   Vector3d getFieldToWavenumber(const Vector3d& pos, double maxK) const;
 

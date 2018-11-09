@@ -105,7 +105,7 @@ void DiffusionSDE::process(Candidate *candidate) const {
 	do {
 		Vector3d PosOut = Vector3d(0.);
 		Vector3d PosErr = Vector3d(0.);
-	  	tryStep(PosIn, PosOut, PosErr, z, propTime);
+	  	tryStep(PosIn, PosOut, PosErr, z, propTime, rig);
 	    // calculate the relative position error r and the next time step h
 	  	r = PosErr.getR() / tolerance;
 	  	propTime *= 0.5;
@@ -121,7 +121,7 @@ void DiffusionSDE::process(Candidate *candidate) const {
 	Vector3d PosOut = Vector3d(0.);
 	Vector3d PosErr = Vector3d(0.);
 	for (size_t j=0; j<stepNumber; j++) {
-		tryStep(Start, PosOut, PosErr, z, allowedTime);
+		tryStep(Start, PosOut, PosErr, z, allowedTime, rig);
 		Start = PosOut;
 	}
 
@@ -229,7 +229,7 @@ void DiffusionSDE::process(Candidate *candidate) const {
 }
 
 
-void DiffusionSDE::tryStep(const Vector3d &PosIn, Vector3d &POut, Vector3d &PosErr,double z, double propStep) const {
+void DiffusionSDE::tryStep(const Vector3d &PosIn, Vector3d &POut, Vector3d &PosErr,double z, double propStep, double rigidity) const {
 
 	Vector3d k[] = {Vector3d(0.),Vector3d(0.),Vector3d(0.),Vector3d(0.),Vector3d(0.),Vector3d(0.)};
 	POut = PosIn;
@@ -243,7 +243,7 @@ void DiffusionSDE::tryStep(const Vector3d &PosIn, Vector3d &POut, Vector3d &PosE
 		// update k_i = direction of the regular magnetic mean field
 		Vector3d BField(0.);
 		try {
-		  	BField = magneticField->getField(y_n, z);
+		  	BField = magneticField->getFieldForParticleRigidity(y_n, rigidity, z);
 		}
 		catch (std::exception &e) {
 			KISS_LOG_ERROR 	<< "DiffusionSDE: Exception in magneticField::getField.\n"

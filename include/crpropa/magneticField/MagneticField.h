@@ -29,6 +29,12 @@ public:
 	virtual Vector3d getField(const Vector3d &position, double z) const {
 		return getField(position);
 	};
+	virtual Vector3d getFieldForParticleRigidity(const Vector3d &position, double rigidity) const {
+	        return getField(position);
+	}
+	virtual Vector3d getFieldForParticleRigidity(const Vector3d &position, double rigidity, double z) const {
+	        return getFieldForParticleRigidity(position, rigidity);
+	}
 };
 
 /**

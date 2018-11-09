@@ -79,6 +79,9 @@ float hsum_float_sse3(__m128 v) {
       random.seed(seed);
     }
 
+    // setting this to infinity means that maxK will always be infinity as well, and thus will have no effect on field generation in any case.
+    rigidityToMaxWavemodeFactor = std::numeric_limits<double>::infinity();
+
     // compute kmin and kmax
     // first, we determine lmax using a re-arranged version of the
     // formula that is also used by turbulentCorrelationLength().
@@ -258,6 +261,11 @@ float hsum_float_sse3(__m128 v) {
 
   Vector3d TD13Field::getField(const Vector3d& pos) const {
     return getFieldToWavenumber(pos, kmax);
+  }
+
+  Vector3d TD13Field::getFieldForParticleRigidity(const Vector3d& pos, double rigidity) const {
+    double maxK = rigidityToMaxWavemodeFactor / rigidity;
+    return getFieldToWavenumber(pos, maxK);
   }
 
 Vector3d TD13Field::getFieldToWavenumber(const Vector3d& pos, double maxK) const {

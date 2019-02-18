@@ -9,8 +9,6 @@ namespace crpropa {
 
 std::vector<double> logspace(double start, double stop, size_t N);
 
-double hsum_double_avx(__m256d v);
-
 /**
  * \addtogroup MagneticFields
  * @{

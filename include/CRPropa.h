@@ -45,6 +45,10 @@
 #include "crpropa/module/PhotonEleCa.h"
 #include "crpropa/module/PhotonOutput1D.h"
 #include "crpropa/module/PropagationCK.h"
+<<<<<<< HEAD
+=======
+#include "crpropa/module/PropagationBP.h"
+>>>>>>> master
 #include "crpropa/module/Redshift.h"
 #include "crpropa/module/RestrictToRegion.h"
 #include "crpropa/module/SimplePropagation.h"

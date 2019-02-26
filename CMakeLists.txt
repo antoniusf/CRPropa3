@@ -363,7 +363,12 @@ add_library(crpropa SHARED
 	src/module/PhotonEleCa.cpp
 	src/module/PhotonOutput1D.cpp
 	src/module/PropagationCK.cpp
+<<<<<<< HEAD
 	src/module/Redshift.cpp
+=======
+	src/module/PropagationBP.cpp
+        src/module/Redshift.cpp
+>>>>>>> master
 	src/module/RestrictToRegion.cpp
 	src/module/SimplePropagation.cpp
 	src/module/SynchrotronRadiation.cpp

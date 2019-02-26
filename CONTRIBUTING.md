@@ -75,9 +75,17 @@ In addition to those general ideas, we use the following conventions:
   * Tabs are used for indentation, spaces for alignment.
   * No spaces should be used in parentheses, but between statement and
     parentheses `if (condition) { ... }` instead of `if( condition){ ... }`
+<<<<<<< HEAD
   * Brace is on the same line as the statement (K&R style), i.e.
     `while(x == y){`
 			...
+=======
+	* Spaces hwould be used around operators, i.e. `x = a * b + 2` instead of
+		`x=a*b+2`
+  * Brace is on the same line as the statement (K&R style), i.e.
+    `while(x == y){`
+
+>>>>>>> master
     `}`
   * Includes should be relative to the base path of CRPropa and not use UNIX
     relative paths such as ., ..
@@ -86,7 +94,10 @@ In addition to those general ideas, we use the following conventions:
     lines
   * If possible headers should be included in the implementation (cpp file) and not the definition (.h) file.
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> master
 ### Python Code
   * All code needs to run on python 3 (and 2.7)
   * Code should follow [PEP8](https://www.python.org/dev/peps/pep-0008/)

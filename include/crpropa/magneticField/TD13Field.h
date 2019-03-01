@@ -43,7 +43,7 @@ private:
   std::vector<double> costheta;
   std::vector<double> beta;
 
-  std::vector<double> avx_data;
+  double *avx_data;
   std::vector<double> Ak;
   std::vector<double> k;
 

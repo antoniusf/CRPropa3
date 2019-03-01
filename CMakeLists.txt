@@ -24,7 +24,7 @@ endif(CMAKE_COMPILER_IS_GNUCXX AND NOT APPLE)
 
 SET(USE_SIMD OFF CACHE BOOL "Enable SIMD flags (SSE 1 through 3) in GCC. This is necessary for fast TD13.")
 if (USE_SIMD)
-        SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -msse4.1 -msse4.2 -mavx" ) # TODO: use something like -march=native to automatically enable fma if available?
+        SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -msse4.1 -msse4.2 -mavx -std=c++0x" ) # TODO: use something like -march=native to automatically enable fma if available?
 endif (USE_SIMD)
 
 SET(FAST_TD13 OFF CACHE BOOL "Enable SIMD optimizations for TD13Field. Requires USE_SIMD to be set as well.")

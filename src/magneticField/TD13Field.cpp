@@ -196,26 +196,23 @@ namespace crpropa {
     }
     //copy data into AVX-compatible arrays
     avx_Nm = ( (Nm + 4 - 1)/4 ) * 4; //round up to next larger multiple of 4: align is 256 = 4 * sizeof(double) bit
-    avx_data = std::vector<double>(itotal*avx_Nm + 3, 0.);
-
-    //get the first 256-bit aligned element
-    size_t size = avx_data.size()*sizeof(double);
-    void *pointer = avx_data.data();
-    align_offset = (double *) std::align(32, 32, pointer, size) - avx_data.data();
+    void *pointer;
+    posix_memalign(&pointer, 32, itotal*avx_Nm*sizeof(double));
+    avx_data = (double *) pointer;
 
     //copy
     for (int i=0; i<Nm; i++) {
-      avx_data[i + align_offset + avx_Nm*iAxi0] = Ak[i] * xi[i].x;
-      avx_data[i + align_offset + avx_Nm*iAxi1] = Ak[i] * xi[i].y;
-      avx_data[i + align_offset + avx_Nm*iAxi2] = Ak[i] * xi[i].z;
+      avx_data[i + avx_Nm*iAxi0] = Ak[i] * xi[i].x;
+      avx_data[i + avx_Nm*iAxi1] = Ak[i] * xi[i].y;
+      avx_data[i + avx_Nm*iAxi2] = Ak[i] * xi[i].z;
 
       // the cosine implementation computes cos(pi*x), so we'll divide out the pi here
-      avx_data[i + align_offset + avx_Nm*ikkappa0] = k[i] / M_PI * kappa[i].x;
-      avx_data[i + align_offset + avx_Nm*ikkappa1] = k[i] / M_PI * kappa[i].y;
-      avx_data[i + align_offset + avx_Nm*ikkappa2] = k[i] / M_PI * kappa[i].z;
+      avx_data[i + avx_Nm*ikkappa0] = k[i] / M_PI * kappa[i].x;
+      avx_data[i + avx_Nm*ikkappa1] = k[i] / M_PI * kappa[i].y;
+      avx_data[i + avx_Nm*ikkappa2] = k[i] / M_PI * kappa[i].z;
 
       // we also need to divide beta by pi, since that goes into the argument as well
-      avx_data[i + align_offset + avx_Nm*ibeta] = beta[i] / M_PI;
+      avx_data[i + avx_Nm*ibeta] = beta[i] / M_PI;
     }
   }
 
@@ -254,15 +251,15 @@ namespace crpropa {
     for (int i=0; i<avx_Nm; i+=4) {
 
       // load data from memory into AVX registers
-      __m256d Axi0 = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*iAxi0);
-      __m256d Axi1 = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*iAxi1);
-      __m256d Axi2 = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*iAxi2);
+      __m256d Axi0 = _mm256_load_pd(avx_data + i + avx_Nm*iAxi0);
+      __m256d Axi1 = _mm256_load_pd(avx_data + i + avx_Nm*iAxi1);
+      __m256d Axi2 = _mm256_load_pd(avx_data + i + avx_Nm*iAxi2);
 
-      __m256d kkappa0 = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*ikkappa0);
-      __m256d kkappa1 = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*ikkappa1);
-      __m256d kkappa2 = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*ikkappa2);
+      __m256d kkappa0 = _mm256_load_pd(avx_data + i + avx_Nm*ikkappa0);
+      __m256d kkappa1 = _mm256_load_pd(avx_data + i + avx_Nm*ikkappa1);
+      __m256d kkappa2 = _mm256_load_pd(avx_data + i + avx_Nm*ikkappa2);
 
-      __m256d beta = _mm256_load_pd(avx_data.data() + i + align_offset + avx_Nm*ibeta);
+      __m256d beta = _mm256_load_pd(avx_data + i + avx_Nm*ibeta);
 
 
       // Do the computation

@@ -44,11 +44,8 @@
 
 #include <iostream>
 
-#if defined(CRPROPA_HAVE_SLEEF) && defined(__SSE__) && defined(__SSE2__) && defined(__SSE3__)
-#define FAST_TD13
-
+#ifdef FAST_TD13
 #include <immintrin.h>
-#include <sleef.h>
 #endif
 
 namespace crpropa {

@@ -70,17 +70,14 @@ int getVersion()
 T interpolate(const Vector3d &position) {
 	if (interpolation == 1)
 	{
-		std::cout << "tricubic" << std::endl;
 	    return tricubic_interpolate(T(), position);	
 	}
 	else if (interpolation == 2) 
 	{
-		std::cout << "nearest neighbour" << std::endl;
 		return nearestneighbour_interpolate(position);
 	}
 	else
 	{
-		std::cout << "trilinear" << std::endl;
 		return trilinear_interpolate(position);	
 	}
 }

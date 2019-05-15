@@ -91,7 +91,7 @@ T interpolate(const Vector3d &position) {
 		setOrigin(origin);
 		setGridSize(N, N, N);
 		setSpacing(spacing);
-		//~ setReflective(false);
+		setReflective(false);
 		//~ setTricubic(false);
 		//~ setNearestNeighbour(false);
 		
@@ -241,12 +241,12 @@ T interpolate(const Vector3d &position) {
 		int iy = round(r.y);
 		int iz = round(r.z);
 		if (reflective) {
-			while ((ix < 0) or (ix > Nx))
-				ix = 2 * Nx * (ix > Nx) - ix;
-			while ((iy < 0) or (iy > Ny))
-				iy = 2 * Ny * (iy > Ny) - iy;
-			while ((iz < 0) or (iz > Nz))
-				iz = 2 * Nz * (iz > Nz) - iz;
+			while ((ix < 0) or (ix >= Nx))
+				ix = 2 * Nx * (ix >= Nx) - ix - 1;
+			while ((iy < 0) or (iy >= Ny))
+				iy = 2 * Ny * (iy >= Ny) - iy - 1;
+			while ((iz < 0) or (iz >= Nz))
+				iz = 2 * Nz * (iz >= Nz) - iz - 1;
 		} else {
 			ix = ((ix % Nx) + Nx) % Nx;
 			iy = ((iy % Ny) + Ny) % Ny;

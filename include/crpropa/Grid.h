@@ -54,8 +54,9 @@ class Grid: public Referenced {
 	Vector3d gridOrigin; /**< Grid origin */
 	double spacing; /**< Distance between grid points, determines the extension of the grid */
 	bool reflective; /**< If set to true, the grid is repeated reflectively instead of periodically */
-	bool tricubic; /** If set to true, use tricubic interpolation instead of trilinear interpolation (standard) */
-
+	//~ bool tricubic; /** If set to true, use tricubic interpolation instead of trilinear interpolation (standard) */
+	//~ bool nearestneighbour; /** If set to true, use nearest neighbour interpolation instead of trilinear interpolation (standard) */
+	int interpolation;
 
 public:
 
@@ -63,18 +64,23 @@ int getVersion()
 //Returns integer 2 to mark the Grid.h version with the tricubic catmull-rom spline interpolation
 //since August 2018
 {
-	return 3;
+	return 4;
 }
 
 T interpolate(const Vector3d &position) {
-	if (tricubic == true)
+	if (interpolation == 1)
 	{
-		//~ std::cout << "tricubic" << std::endl;
+		std::cout << "tricubic" << std::endl;
 	    return tricubic_interpolate(T(), position);	
+	}
+	else if (interpolation == 2) 
+	{
+		std::cout << "nearest neighbour" << std::endl;
+		return nearestneighbour_interpolate(position);
 	}
 	else
 	{
-		//~ std::cout << "trilinear" << std::endl;
+		std::cout << "trilinear" << std::endl;
 		return trilinear_interpolate(position);	
 	}
 }
@@ -88,8 +94,15 @@ T interpolate(const Vector3d &position) {
 		setOrigin(origin);
 		setGridSize(N, N, N);
 		setSpacing(spacing);
-		setReflective(false);
-		setTricubic(false);
+		//~ setReflective(false);
+		//~ setTricubic(false);
+		//~ setNearestNeighbour(false);
+		
+		interpolation = 0; //trilinear
+		
+		activateNearestNeighbour();
+		activateTricubic();
+		activateTrilinear();
 		
 		//~ last_ix = -1;
 		//~ last_iy = -1;
@@ -134,8 +147,33 @@ T interpolate(const Vector3d &position) {
 		reflective = b;
 	}
 	
-	void setTricubic(bool b) {
-		tricubic = b;
+	//~ void setTricubic(bool b) {
+		//~ tricubic = b;
+	//~ }
+	
+	//~ void setNearestNeighbour(bool b) {
+		//~ nearestneighbour = b;
+	//~ }
+	
+	void activateTricubic()
+	{
+		//~ nearestneighbour = false;
+		//~ tricubic = true;
+		interpolation = 1;
+	}
+	
+	void activateNearestNeighbour()
+	{
+		//~ tricubic = false;
+		//~ nearestneighbour = true;
+		interpolation = 2;
+	}
+	
+	void activateTrilinear()
+	{
+		//~ tricubic = false;
+		//~ nearestneighbour = false;	
+		interpolation = 0;
 	}
 
 	Vector3d getOrigin() const {
@@ -425,6 +463,12 @@ CubicInterpolateScalar(CubicInterpolateScalar(CubicInterpolateScalar(periodicGet
 
 		return b;
 	}
+	
+	
+	/** Interpolate the grid at a given position using the nearest neighbour interpolation */
+	T nearestneighbour_interpolate(const Vector3d &position) const {
+		return closestValue(position);
+		}
 };
 
 typedef Grid<Vector3f> VectorGrid;

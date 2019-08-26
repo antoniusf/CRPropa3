@@ -193,17 +193,19 @@ public:
  @brief Observes the time evolution of the candidates (phase-space elements)
  This observer is very useful if the time evolution of the particle density is needed. It detects all candidates in regular timeintervals and limits the nextStep of candidates to prevent overshooting of detection intervals.
  */
+
 class ObserverTimeEvolution: public ObserverFeature {
 private:
   std::vector<double> detList;
 public:
   ObserverTimeEvolution();
-  ObserverTimeEvolution(double min, double dist, double numb);
+  ObserverTimeEvolution(double min, double dist, double numb, std::string scale = "linear");
   void addTime(const double &position);
   const std::vector<double>& getTimes() const;
   DetectionState checkDetection(Candidate *candidate) const;
   std::string getDescription() const;
 };
+
 /** @} */
 
 }

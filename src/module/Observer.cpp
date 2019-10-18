@@ -302,9 +302,13 @@ std::string ObserverElectronVeto::getDescription() const {
 // ObserverTimeEvolution --------------------------------------------------------
 ObserverTimeEvolution::ObserverTimeEvolution() {}
 
-ObserverTimeEvolution::ObserverTimeEvolution(double min, double dist, double numb) {
+ObserverTimeEvolution::ObserverTimeEvolution(double min, double dist, double numb, std::string scale) {
   for (size_t i = 0; i < numb; i++) {
-    addTime(min + i * dist);
+    if (scale == "log") {
+      addTime(min * pow(10.0, log10(dist/min)*double(i)/numb));
+    } else {
+      addTime(min + i * dist);
+    }
   }
 }
 

@@ -396,6 +396,7 @@ add_library(crpropa SHARED
 	src/magneticField/MagneticFieldGrid.cpp
 	src/magneticField/PT11Field.cpp
     src/magneticField/TF17Field.cpp
+    src/magneticField/TD13Field.cpp
 	src/magneticField/ArchimedeanSpiralField.cpp
 	src/advectionField/AdvectionField.cpp
 	src/massDistribution/Nakanishi.cpp

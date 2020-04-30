@@ -35,6 +35,20 @@ if(CMAKE_COMPILER_IS_GNUCXX AND NOT APPLE)
 	message(STATUS "Use --as-needed linker flags!")
 endif(CMAKE_COMPILER_IS_GNUCXX AND NOT APPLE)
 
+SET(USE_SIMD OFF CACHE BOOL "Enable SIMD flags (SSE 1 through 4 + AVX) in GCC. This is necessary for fast TD13.")
+if (USE_SIMD)
+        SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -msse4.1 -msse4.2 -mavx -std=c++0x" ) # TODO: use something like -march=native to automatically enable fma if available? also, why is the std flag here??
+endif (USE_SIMD)
+
+SET(FAST_TD13 OFF CACHE BOOL "Enable SIMD optimizations for TD13Field. Requires USE_SIMD to be set as well.")
+if (FAST_TD13)
+  if (USE_SIMD)
+    add_definitions(-DFAST_TD13)
+  else (USE_SIMD)
+    message(SEND_ERROR "You've requested the FAST_TD13 implementation, but have not enabled USE_SIMD. TD13Field will be compiled without the optimization.")
+  endif(USE_SIMD)
+endif(FAST_TD13)
+
 # Add build type for profiling
 SET(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS} -ggdb -fno-omit-frame-pointer")
 # Enable extra warnings on debug builds
@@ -75,6 +89,7 @@ list(APPEND CRPROPA_EXTRA_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/src/Version.cpp")
 # ----------------------------------------------------------------------------
 # Dependencies
 # ----------------------------------------------------------------------------
+
 # googletest (provided, see https://code.google.com/p/googletest/wiki/FAQ
 #     Why is it not recommended use a pre-compiled copy of Google Test?)
 option(ENABLE_TESTING "Build tests and enable test target" ON)
@@ -392,11 +407,11 @@ add_library(crpropa SHARED
 	src/module/Tools.cpp
 	src/magneticField/JF12Field.cpp
 	src/magneticField/JF12FieldSolenoidal.cpp
+	src/magneticField/TD13Field.cpp
 	src/magneticField/MagneticField.cpp
 	src/magneticField/MagneticFieldGrid.cpp
 	src/magneticField/PT11Field.cpp
     src/magneticField/TF17Field.cpp
-    src/magneticField/TD13Field.cpp
 	src/magneticField/ArchimedeanSpiralField.cpp
 	src/advectionField/AdvectionField.cpp
 	src/massDistribution/Nakanishi.cpp

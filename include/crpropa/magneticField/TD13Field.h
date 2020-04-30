@@ -1,56 +1,124 @@
 #ifndef CRPROPA_TD13FIELD_H
 #define CRPROPA_TD13FIELD_H
 
-#include <crpropa/magneticField/MagneticField.h>
-#include <crpropa/Vector3.h>
-
+#include "crpropa/Grid.h"
+#include "crpropa/magneticField/MagneticField.h"
 #include <vector>
 
-using namespace std;
-using namespace crpropa;
-
-/* 
- @class TD13Field
- @brief TD13Field turbulent magnetic field 
-
- Implementation of the turbulent magnetic field from Tautz and Dosch 2013
- "On numerical turbulence generation for test-particle simulations"
- in Physics of Plasmas
- doi: 10.1063/1.4789861
- see https://ui.adsabs.harvard.edu/abs/2013PhPl...20b2302T/abstract
+namespace crpropa {
+/**
+ * \addtogroup MagneticFields
+ * @{
  */
 
+/**
+ @class TD13Field
+ @brief Interpolation-free turbulent magnetic field based on the GJ99 and TD13
+papers
+
+ ## Overview
+ This class provides a turbulent magnetic field that is generated as described
+by [(Giacalone and Jokipii, 1999)][gj99] and [(Tautz and Dosch, 2013)][td13].
+Instead of using an inverse Fourier transform to generate the field on a grid --
+which then needs to be interpolated to obtain in-between values -- this method
+only generates the wave modes making up the turbulent magnetic field ahead of
+time. At run time, when the field's value at a particular position is required,
+these plane waves are then evaluated analytically at that position. This
+guarantees that the resulting field is completely free of divergence, reproduces
+the mean field strength accurately, and does not suffer from other
+interpolation-induced problems. The disadvantage is that the number of wave
+modes is drastically smaller when compared with initTurbulence, which might have
+physical ramifications on the particles propagating through the field.
+Additionally, the implementation is somewhat slower.
+
+ ## Using the SIMD optimization
+ In order to mitigate some of the performance impact that is inherent in this
+method of field generation, an optimized version utilizing data-level
+parallelism through SIMD instructions is provided. More specifically, this
+implementation uses the AVX extension to the x86 instruction set. In order to
+use this optimized version, three conditions need to be met:
+
+1. The `USE_SIMD` option needs to be explicitly enabled in CMake. Currently,
+this sets GCC flags that tell the compiler to allow SIMD instructions.
+2. You also need to enable the `FAST_TD13` option to tell the compiler that you
+specifically want it to include the SIMD version of TD13.
+3. Finally, the CPU that will actually run the code needs to support the
+required extensions: AVX and everything below. These extensions are relatively
+common, but there may still be processors in use that do not support them.
+
+[gj99]: https://doi.org/10.1086/307452
+[td13]: https://doi.org/10.1063/1.4789861
+ */
 class TD13Field : public MagneticField {
 private:
-	double spec_Lmax, spec_Lmin; 
-    double spec_q, spec_s; 
-    int Nmodes; 
+  double Brms;
+  double Lmax, Lmin;
+  double q, s;
+  int Nm;
 
-    vector<double> k_n;
-    vector<double> Ak_n;
-    vector<double> eta_n; // = cos(theta_n)
-    vector<double> sqrt_eta_n; // = sqrt(1-eta**2)
-    vector<double> cos_phi_n;
-    vector<double> sin_phi_n;
-    vector<double> phase_n;
-    vector<Vector3d> Xi_n;
+  std::vector<Vector3d> xi;
+  std::vector<Vector3d> kappa;
+  std::vector<double> phi;
+  std::vector<double> costheta;
+  std::vector<double> beta;
+  std::vector<double> Ak;
+  std::vector<double> k;
+
+  // data for FAST_TD13
+  int avx_Nm;
+  int align_offset;
+  std::vector<double> avx_data;
+  // the following are index bases into the avx_data array.
+  // since each subarray has avx_Nm elements, the start offset
+  // of each subarray can be computed by multiplying the two,
+  // and then adding on the alignment offset.
+  // iAxi is a combined array containing the product of A * xi
+  static const int iAxi0 = 0;
+  static const int iAxi1 = 1;
+  static const int iAxi2 = 2;
+  // ikkappa is a combined array containing the product of k * kappa
+  static const int ikkappa0 = 3;
+  static const int ikkappa1 = 4;
+  static const int ikkappa2 = 5;
+  static const int ibeta = 6;
+  static const int itotal = 7;
 
 public:
-    /**Constructor
-       @param B_0           Magnetic field strength at reference level
-       @param Lmin, Lmax    Magnetic field minimum and maximum wave length
-       @param s, q          Magnetic field spectral indexes : default values (s=5/3, q=0) for a Kolmogorov spectrum 
-       @param Nm            Number of Fourier modes
-       @param seed          Seed for the random number generator, if 0, not set
-     */
-    TD13Field(double B_0, double Lmin, double Lmax, double s=5./3., double q=0, int Nm=64, int seed=42);
+  /**
+      Create a new instance of TD13Field with the specified parameters. This
+     generates all of the wavemodes according to the given parameters.
+      @param Brms         root mean square field strength for generated field
+      @param Lmin, Lmax   minimum and maximum wave length
+      @param q, s         the spectral indexes, as defined in the TD13 paper.
+     Usually, you'd want to use s=5/3 and q=0 here, which will be comparable to
+     passing -11/3 to `initTurbulence`.
+      @param Nm           number of wavemodes that will be used when computing
+     the field. A higher value will give a more accurate representation of the
+     turbulence, but increase the runtime for getField.
+      @param              seed can be used to seed the random number generator
+     used to generate the field. This works just like in initTurbulence: a seed
+     of 0 will lead to a randomly initialized RNG.
+  */
+  TD13Field(double Brms, double Lmin, double Lmax, double s = 5 / 3.,
+            double q = 0, int Nm = 64, int seed = 0, bool powerlaw = false);
 
-    Vector3d getField(const Vector3d &pos) const;
+  /**
+     Evaluates the field at the given position.
 
-    /**@brief       compute the magnetic field coherence length according to the formula in  Harari et Al JHEP03(2002)045  
-     * @return Lc   coherence length of the magnetic field
-     */
-    double getLc() const;
+     Theoretical runtime is O(Nm), where Nm is the number of wavemodes.
+  */
+  Vector3d getField(const Vector3d &pos) const;
+
+  /**
+      @brief       compute the magnetic field coherence length according to the
+     formula in  Harari et Al JHEP03(2002)045
+      @return Lc   coherence length of the magnetic field
+  */
+  double getLc() const;
 };
+
+/** @} */
+
+} // namespace crpropa
 
 #endif // CRPROPA_TD13FIELD_H

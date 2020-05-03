@@ -39,7 +39,7 @@
 //         OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //         THE SOFTWARE.
 
-#include "crpropa/magneticField/TD13Field.h"
+#include "crpropa/magneticField/turbulentField/PlaneWaveTurbulence.h"
 #include "crpropa/GridTools.h"
 #include "crpropa/Random.h"
 #include "crpropa/Units.h"
@@ -47,12 +47,12 @@
 
 #include <iostream>
 
-#ifdef FAST_TD13
+#ifdef FAST_WAVES
 #include <immintrin.h>
 #endif
 
 namespace crpropa {
-#ifdef FAST_TD13
+#ifdef FAST_WAVES
 // see
 // https://stackoverflow.com/questions/49941645/get-sum-of-values-stored-in-m256d-with-sse-avx
 double hsum_double_avx(__m256d v) {
@@ -89,13 +89,14 @@ float hsum_float_avx(__m256 x) {
   const __m128 sum = _mm_add_ss(lo, hi);
   return _mm_cvtss_f32(sum);
 }
-#endif // defined(FAST_TD13)
+#endif // defined(FAST_WAVES)
 
-TD13Field::TD13Field(double Brms, double Lmin, double Lmax, double s, double q,
-                     int Nm, int seed, const bool powerlaw) {
+PlaneWaveTurbulence::PlaneWaveTurbulence(double Brms, double Lmin, double Lmax, double s, double q,
+                     double bendover_scale, int Nm, int seed, const bool powerlaw)
+  : TurbulentField(Brms, s, q, bendover_scale), Lmin(Lmin), Lmax(Lmax), Nm(Nm) {
 
-#ifdef FAST_TD13
-  KISS_LOG_INFO << "TD13Field: Using SIMD TD13 implementation" << std::endl;
+#ifdef FAST_WAVES
+  KISS_LOG_INFO << "PlaneWaveTurbulence: Using SIMD TD13 implementation" << std::endl;
 
   // In principle, we could dynamically dispatch to the non-SIMD version in
   // this case. However, this complicates the code, incurs runtime overhead,
@@ -111,28 +112,20 @@ TD13Field::TD13Field(double Brms, double Lmin, double Lmax, double s, double q,
 #endif
 
   if (Lmin > Lmax) {
-    throw std::runtime_error("TD13Field: Lmin > Lmax");
+    throw std::runtime_error("PlaneWaveTurbulence: Lmin > Lmax");
   }
 
   if (Nm <= 1) {
     throw std::runtime_error(
-        "TD13Field: Nm <= 1. We need at least two wavemodes in order to "
+        "PlaneWaveTurbulence: Nm <= 1. We need at least two wavemodes in order to "
         "generate the k distribution properly, and besides -- *what are "
         "you "
         "doing?!*");
   }
 
   if (Lmin <= 0) {
-    throw std::runtime_error("TD13Field: Lmin <= 0");
+    throw std::runtime_error("PlaneWaveTurbulence: Lmin <= 0");
   }
-
-  // initialize everything
-  this->Brms = Brms;
-  this->Nm = Nm;
-  this->Lmax = Lmax;
-  this->Lmin = Lmin;
-  this->q = q;
-  this->s = s;
 
   Random random;
   if (seed != 0)
@@ -165,12 +158,7 @@ TD13Field::TD13Field(double Brms, double Lmin, double Lmax, double s, double q,
   // non-normalized Ak^2)
   for (int i = 0; i < Nm; i++) {
     double k = this->k[i];
-    double Gk;
-    if (powerlaw) {
-      Gk = pow(k, -s);
-    } else {
-      Gk = pow(k, q) / pow(1 + k * k, (s + q) / 2.);
-    }
+    double Gk = energySpectrum(k);
     Ak[i] = Gk * delta_k0 * k;
     Ak2_sum += Ak[i];
 
@@ -208,7 +196,7 @@ TD13Field::TD13Field(double Brms, double Lmin, double Lmax, double s, double q,
     Ak[i] = sqrt(2 * Ak[i] / Ak2_sum) * Brms;
   }
 
-#ifdef FAST_TD13
+#ifdef FAST_WAVES
   // * copy data into AVX-compatible arrays *
   // AVX requires all data to be aligned to 256 bit, or 32 bytes, which is the
   // same as 4 double precision floating point numbers. Since support for
@@ -250,12 +238,12 @@ TD13Field::TD13Field(double Brms, double Lmin, double Lmax, double s, double q,
     // as well
     avx_data[i + align_offset + avx_Nm * ibeta] = beta[i] / M_PI;
   }
-#endif // FAST_TD13
+#endif // FAST_WAVES
 }
 
-Vector3d TD13Field::getField(const Vector3d &pos) const {
+Vector3d PlaneWaveTurbulence::getField(const Vector3d &pos) const {
 
-#ifndef FAST_TD13
+#ifndef FAST_WAVES
   Vector3d B(0.);
   for (int i = 0; i < Nm; i++) {
     double z_ = pos.dot(kappa[i]);
@@ -263,7 +251,7 @@ Vector3d TD13Field::getField(const Vector3d &pos) const {
   }
   return B;
 
-#else  // FAST_TD13
+#else  // FAST_WAVES
 
   // Initialize accumulators
   //
@@ -409,16 +397,16 @@ Vector3d TD13Field::getField(const Vector3d &pos) const {
 
   return Vector3d(hsum_double_avx(acc0), hsum_double_avx(acc1),
                   hsum_double_avx(acc2));
-#endif // FAST_TD13
+#endif // FAST_WAVES
 }
 
-double TD13Field::getLc() const {
+double PlaneWaveTurbulence::getCorrelationLength() const {
   // According to Harari et Al JHEP03(2002)045
   double Lc;
   Lc = Lmax / 2.;
-  Lc *= (s - 1.) / s;
-  Lc *= 1 - pow(Lmin / Lmax, s);
-  Lc /= 1 - pow(Lmin / Lmax, s - 1);
+  Lc *= (sindex - 1.) / sindex;
+  Lc *= 1 - pow(Lmin / Lmax, sindex);
+  Lc /= 1 - pow(Lmin / Lmax, sindex - 1);
   return Lc;
 }
 

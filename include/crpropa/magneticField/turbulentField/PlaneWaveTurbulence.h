@@ -1,8 +1,8 @@
-#ifndef CRPROPA_TD13FIELD_H
-#define CRPROPA_TD13FIELD_H
+#ifndef CRPROPA_PLANEWAVETURBULENCE_H
+#define CRPROPA_PLANEWAVETURBULENCE_H
 
 #include "crpropa/Grid.h"
-#include "crpropa/magneticField/MagneticField.h"
+#include "crpropa/magneticField/turbulentField/TurbulentField.h"
 #include <vector>
 
 namespace crpropa {
@@ -12,7 +12,7 @@ namespace crpropa {
  */
 
 /**
- @class TD13Field
+ @class PlaneWaveTurbulence
  @brief Interpolation-free turbulent magnetic field based on the GJ99 and TD13
 papers
 
@@ -40,8 +40,8 @@ use this optimized version, three conditions need to be met:
 
 1. The `USE_SIMD` option needs to be explicitly enabled in CMake. Currently,
 this sets GCC flags that tell the compiler to allow SIMD instructions.
-2. You also need to enable the `FAST_TD13` option to tell the compiler that you
-specifically want it to include the SIMD version of TD13.
+2. You also need to enable the `FAST_WAVES` option to tell the compiler that you
+specifically want it to include the SIMD version of PlaneWaveTurbulence.
 3. Finally, the CPU that will actually run the code needs to support the
 required extensions: AVX and everything below. These extensions are relatively
 common, but there may still be processors in use that do not support them.
@@ -49,11 +49,9 @@ common, but there may still be processors in use that do not support them.
 [gj99]: https://doi.org/10.1086/307452
 [td13]: https://doi.org/10.1063/1.4789861
  */
-class TD13Field : public MagneticField {
+class PlaneWaveTurbulence : public TurbulentField {
 private:
-  double Brms;
   double Lmax, Lmin;
-  double q, s;
   int Nm;
 
   std::vector<Vector3d> xi;
@@ -64,7 +62,7 @@ private:
   std::vector<double> Ak;
   std::vector<double> k;
 
-  // data for FAST_TD13
+  // data for FAST_WAVES
   int avx_Nm;
   int align_offset;
   std::vector<double> avx_data;
@@ -85,7 +83,7 @@ private:
 
 public:
   /**
-      Create a new instance of TD13Field with the specified parameters. This
+      Create a new instance of PlaneWaveTurbulence with the specified parameters. This
      generates all of the wavemodes according to the given parameters.
       @param Brms         root mean square field strength for generated field
       @param Lmin, Lmax   minimum and maximum wave length
@@ -99,8 +97,8 @@ public:
      used to generate the field. This works just like in initTurbulence: a seed
      of 0 will lead to a randomly initialized RNG.
   */
-  TD13Field(double Brms, double Lmin, double Lmax, double s = 5 / 3.,
-            double q = 0, int Nm = 64, int seed = 0, bool powerlaw = false);
+  PlaneWaveTurbulence(double Brms, double Lmin, double Lmax, double s = 5 / 3.,
+		      double q = 0, double bendover_scale = 1., int Nm = 64, int seed = 0, bool powerlaw = false);
 
   /**
      Evaluates the field at the given position.
@@ -114,11 +112,11 @@ public:
      formula in  Harari et Al JHEP03(2002)045
       @return Lc   coherence length of the magnetic field
   */
-  double getLc() const;
+  double getCorrelationLength() const;
 };
 
 /** @} */
 
 } // namespace crpropa
 
-#endif // CRPROPA_TD13FIELD_H
+#endif // CRPROPA_PLANEWAVETURBULENCE_H
